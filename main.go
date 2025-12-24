@@ -60,11 +60,17 @@ func (p *program) run() {
     ticker := time.NewTicker(checkInterval)
     defer ticker.Stop()
 
+	var onBatterySince time.Time
+
     for {
         select {
         case <-ticker.C:
             log.Println("Service is running...")
-            checkBattery(maxBatterySeconds, criticalRemaining)
+            onBatterySince = checkBattery(
+				onBatterySince,
+				maxBatterySeconds,
+				criticalRemaining,
+			)
         case <-p.exit:
             log.Println("Exiting run loop...")
             return
@@ -127,16 +133,16 @@ func setPrio() {
 
 
 
-func checkBattery(maxBatterySeconds time.Duration, criticalRemaining uint32) {
-
-
-	var onBatterySince time.Time
-
+func checkBattery(
+	onBatterySince time.Time,
+	maxBatterySeconds time.Duration,
+	criticalRemaining uint32,
+) (time.Time) {
 
 	status, err := getPowerStatus()
 	if err != nil {
 		log.Println("power status error:", err)
-		return
+		return time.Time{}
 	}
 
 	onBattery := status.ACLineStatus == 0
@@ -168,6 +174,7 @@ func checkBattery(maxBatterySeconds time.Duration, criticalRemaining uint32) {
 		onBatterySince = time.Time{}
 	}
 
+	return onBatterySince
 }
 
 func main() {
