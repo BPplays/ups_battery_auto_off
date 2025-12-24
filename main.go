@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"context"
 	// "os/exec"
 	"time"
 	"unsafe"
@@ -50,22 +49,22 @@ func (p *program) Start(s service.Service) error {
 }
 
 func (p *program) run() {
-    ctx, cancel := context.WithCancel(context.Background())
-    defer cancel()
+	const (
+		checkInterval      = 5 * time.Second
+		maxBatterySeconds  = 30 * time.Second
+		criticalRemaining  = 3 * 60 // seconds
+	)
 
-    go func() {
-        <-p.exit
-        cancel() // Cancel context when exit is signaled
-    }()
+	setPrio()
 
-    ticker := time.NewTicker(10 * time.Second)
+    ticker := time.NewTicker(checkInterval)
     defer ticker.Stop()
 
     for {
         select {
         case <-ticker.C:
             log.Println("Service is running...")
-            mainLoop(ctx)
+            checkBattery(maxBatterySeconds, criticalRemaining)
         case <-p.exit:
             log.Println("Exiting run loop...")
             return
@@ -128,70 +127,55 @@ func setPrio() {
 
 
 
-func mainLoop(ctx context.Context) {
+func checkBattery(maxBatterySeconds time.Duration, criticalRemaining uint32) {
 
-	const (
-		checkInterval      = 5 * time.Second
-		maxBatterySeconds  = 30 * time.Second
-		criticalRemaining  = 3 * 60 // seconds
-	)
+
+	var onBatterySince time.Time
+
+
+	status, err := getPowerStatus()
+	if err != nil {
+		log.Println("power status error:", err)
+		return
+	}
+
+	onBattery := status.ACLineStatus == 0
+	remaining := status.BatteryLifeTime
+
+
+	if onBattery {
+		fmt.Println("on battery now")
+		fmt.Printf("time remaining: %v\n", remaining)
+		fmt.Printf("on battery since: %v\n", time.Since(onBatterySince))
+
+		if onBatterySince.IsZero() {
+			onBatterySince = time.Now()
+		}
+
+
+		// Condition 1: battery runtime low
+		if remaining != 0xFFFFFFFF && remaining <= criticalRemaining {
+			hibernate()
+			// return
+		}
+
+		// Condition 2: on battery too long
+		if time.Since(onBatterySince) >= maxBatterySeconds {
+			hibernate()
+			// return
+		}
+	} else {
+		onBatterySince = time.Time{}
+	}
+
+}
+
+func main() {
 
 	dryRunP := flag.Bool("dryRun", false, "don't hibernate")
 	flag.Parse()
 	dryRun = *dryRunP
 
-	setPrio()
-
-	var onBatterySince time.Time
-
-	for {
-		st := time.Now()
-
-		if ctx.Err() != nil {
-			return
-		}
-
-		status, err := getPowerStatus()
-		if err != nil {
-			log.Println("power status error:", err)
-			time.Sleep(checkInterval)
-			continue
-		}
-
-		onBattery := status.ACLineStatus == 0
-		remaining := status.BatteryLifeTime
-
-
-		if onBattery {
-			fmt.Println("on battery now")
-			fmt.Printf("time remaining: %v\n", remaining)
-			fmt.Printf("on battery since: %v\n", time.Since(onBatterySince))
-
-			if onBatterySince.IsZero() {
-				onBatterySince = time.Now()
-			}
-
-
-			// Condition 1: battery runtime low
-			if remaining != 0xFFFFFFFF && remaining <= criticalRemaining {
-				hibernate()
-				// return
-			}
-
-			// Condition 2: on battery too long
-			if time.Since(onBatterySince) >= maxBatterySeconds {
-				hibernate()
-				// return
-			}
-		} else {
-			onBatterySince = time.Time{}
-		}
-
-		time.Sleep(checkInterval - time.Since(st))
-	}
-}
-
-func main() {
 	svcConfig := &service.Config{
 		Name:        "ups_battery_auto_off",
 		DisplayName: "ups_battery_auto_off",
@@ -201,6 +185,7 @@ func main() {
 		},
 	}
 
+
 	for range 25 {
 		prg := &program{}
 		s, err := service.New(prg, svcConfig)
@@ -209,11 +194,38 @@ func main() {
 			continue
 		}
 
-		err = s.Run()
-		if err != nil {
-			log.Println(err)
-			continue
+		if len(os.Args) > 1 {
+			switch os.Args[1] {
+			case "install":
+				if err := s.Install(); err != nil { log.Fatal(err) }
+				log.Println("installed")
+				return
+			case "uninstall":
+				if err := s.Uninstall(); err != nil { log.Fatal(err) }
+				log.Println("uninstalled")
+				return
+			case "start":
+				if err := s.Start(); err != nil { log.Fatal(err) }
+				log.Println("service started")
+				return
+			case "stop":
+				if err := s.Stop(); err != nil { log.Fatal(err) }
+				log.Println("service stopped")
+				return
+			case "debug":
+				// Run in console for debugging (does not use service control manager)
+				if err := s.Run(); err != nil { log.Fatal(err) }
+				return
+			default:
+				log.Fatalf("unknown command: %s", os.Args[1])
+			}
 		}
+
+		// err = s.Run()
+		// if err != nil {
+		// 	log.Println(err)
+		// 	continue
+		// }
 
 		break
 	}
