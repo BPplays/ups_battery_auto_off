@@ -1,0 +1,6 @@
+github.com/hekmon/processpriority v1.0.0 h1:Qj0P8iEO25b+8wGQ1ZG7HzBLpHjGGSgbujr++dSBn68=
+github.com/hekmon/processpriority v1.0.0/go.mod h1:pZm/iZaUiyJpxD7Ad+gGAP3jusrALui1hXL9t7twP6M=
+github.com/kardianos/service v1.2.4 h1:XNlGtZOYNx2u91urOdg/Kfmc+gfmuIo1Dd3rEi2OgBk=
+github.com/kardianos/service v1.2.4/go.mod h1:E4V9ufUuY82F7Ztlu1eN9VXWIQxg8NoLQlmFe0MtrXc=
+golang.org/x/sys v0.39.0 h1:CvCKL8MeisomCi6qNZ+wbb0DN9E5AATixKsvNtMoMFk=
+golang.org/x/sys v0.39.0/go.mod h1:OgkHotnGiDImocRcuBABYBEXf8A9a87e/uXjp9XT3ks=
