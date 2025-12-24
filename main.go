@@ -221,11 +221,11 @@ func main() {
 			}
 		}
 
-		// err = s.Run()
-		// if err != nil {
-		// 	log.Println(err)
-		// 	continue
-		// }
+		err = s.Run()
+		if err != nil {
+			log.Println(err)
+			continue
+		}
 
 		break
 	}
