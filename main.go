@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"context"
 	// "os/exec"
 	"time"
 	"unsafe"
@@ -35,20 +36,48 @@ var (
 	procSetSuspendState   = powrprof.NewProc("SetSuspendState")
 )
 
-// Program structures.
-type program struct{}
-
-func (p *program) Start(s service.Service) error {
-	// Start should not block. Do the actual work async.
-	go p.run()
-	return nil
+type program struct{
+    exit chan struct{}
 }
 
+func (p *program) Start(s service.Service) error {
+    // Create the exit channel
+    p.exit = make(chan struct{})
+
+    // Start should not block. Do the actual work async.
+    go p.run()
+    return nil
+}
+
+func (p *program) run() {
+    ctx, cancel := context.WithCancel(context.Background())
+    defer cancel()
+
+    go func() {
+        <-p.exit
+        cancel() // Cancel context when exit is signaled
+    }()
+
+    ticker := time.NewTicker(10 * time.Second)
+    defer ticker.Stop()
+
+    for {
+        select {
+        case <-ticker.C:
+            log.Println("Service is running...")
+            mainLoop(ctx)
+        case <-p.exit:
+            log.Println("Exiting run loop...")
+            return
+        }
+    }
+}
 
 func (p *program) Stop(s service.Service) error {
-	// Stop should not block. Return with a few seconds.
-	log.Println("Service is stopping...")
-	return nil
+    // Signal the run goroutine to exit
+    log.Println("Service is stopping...")
+    close(p.exit)
+    return nil
 }
 
 func getPowerStatus() (*systemPowerStatus, error) {
@@ -98,13 +127,15 @@ func setPrio() {
 }
 
 
-func (p *program) run() {
+
+func mainLoop(ctx context.Context) {
 
 	const (
 		checkInterval      = 5 * time.Second
 		maxBatterySeconds  = 30 * time.Second
 		criticalRemaining  = 3 * 60 // seconds
 	)
+
 	dryRunP := flag.Bool("dryRun", false, "don't hibernate")
 	flag.Parse()
 	dryRun = *dryRunP
@@ -115,6 +146,10 @@ func (p *program) run() {
 
 	for {
 		st := time.Now()
+
+		if ctx.Err() != nil {
+			return
+		}
 
 		status, err := getPowerStatus()
 		if err != nil {
